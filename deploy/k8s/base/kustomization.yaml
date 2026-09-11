@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: chat-backend
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - hpa.yaml
+# secret.example.yaml and ingress.example.yaml are templates, not applied by default.

@@ -1,0 +1,18 @@
+# WebSocket connection count matters more than CPU for this workload; scaling on CPU
+# alone under-reacts to a burst of idle-but-open sockets. Swap in a custom metric
+# (chat_ws_connections from /metrics, via a Prometheus adapter) if you run a metrics
+# pipeline; CPU is a reasonable default otherwise.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: chat-api
+  namespace: chat-backend
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: chat-api }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+  behavior:
+    scaleDown: { stabilizationWindowSeconds: 300 }

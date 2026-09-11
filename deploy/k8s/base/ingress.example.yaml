@@ -1,0 +1,22 @@
+# Example only - adjust to your ingress controller. WebSocket upgrade headers and a long
+# read timeout are the two settings that matter; everything else is standard.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chat-api
+  namespace: chat-backend
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["chat-api.example.com"]
+      secretName: chat-api-tls
+  rules:
+    - host: chat-api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: chat-api, port: { number: 80 } } }

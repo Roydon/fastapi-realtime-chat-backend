@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chat-api-config
+  namespace: chat-backend
+data:
+  LOG_LEVEL: "INFO"
+  LOG_JSON: "true"
+  AUTH_MODE: "jwks"                  # switch to hs256 only for demos
+  JWT_USER_CLAIM: "sub"
+  # JWKS_URL / JWT_ISSUER / JWT_AUDIENCE: point at your identity provider
+  REDIS_URL: "redis://redis:6379/0"
+  DATABASE_URL: "postgresql+asyncpg://chat:chat@postgres:5432/chat"
+  S3_BUCKET: "chat-attachments"
+  S3_REGION: "us-east-1"
+  ATTACHMENT_MAX_BYTES: "5242880"
+  DEMO_ENABLED: "false"

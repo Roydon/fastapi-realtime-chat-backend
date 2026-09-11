@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
-from app.config import Settings
-from app.main import create_app
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
-OUT = Path(__file__).resolve().parents[1] / "docs" / "openapi.json"
+from app.config import Settings  # noqa: E402
+from app.main import create_app  # noqa: E402
+
+OUT = REPO_ROOT / "docs" / "openapi.json"
 
 
 def main() -> None:
