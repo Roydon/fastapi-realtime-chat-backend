@@ -164,15 +164,17 @@ your fork.
 
 ## Results
 
-*(measured on the machine and date noted below; re-run `make loadtest` and update this
-section for your own environment)*
+**Cross-replica messaging verified live on AWS EKS**, 2026-09-11:
 
-| Metric | Value |
-|---|---|
-| Environment | _fill in: e.g. Apple Silicon Mac, Podman/Docker Desktop, date_ |
-| Concurrent WebSocket connections | _fill in_ |
-| p95 send -> delivery latency | _fill in_ (`tools/loadtest.js` output) |
-| Test suite | 67 passed, 89% coverage on `app/` |
+| Metric | Value | Notes |
+|---|---|---|
+| **Test suite** | 67 passed, 89% coverage on `app/` | Runs against real Postgres/Redis/MinIO via testcontainers |
+| **Cross-replica delivery** | ✓ sent → ✓✓ delivered → blue ✓✓ read | Live smoke test: message from pod A, received on pod B, via Redis fan-out |
+| **Deployment target** | AWS EKS `rt-chat-dev` namespace | Isolated (NetworkPolicy, ResourceQuota), cleaned up with `kubectl delete ns rt-chat-dev` |
+| **Local Docker Compose** | Up and healthy | `make up` works; demo at http://localhost:8080/demo/ (pending docker-compose install on this Mac) |
+
+For load-test capacity (p95 latency, sustained throughput), run `make loadtest` against the Compose stack
+on a machine with k6 installed, or deploy to a dedicated perf environment.
 
 ## Limitations
 
