@@ -20,7 +20,9 @@ spec:
       # No sticky sessions needed: any replica can serve any user, WebSockets included,
       # because delivery fans out through Redis (see README "How it works").
       automountServiceAccountToken: false
-      securityContext: { runAsNonRoot: true, seccompProfile: { type: RuntimeDefault } }
+      # runAsUser must be numeric: the image's USER is the name "app" (uid 1001), and the
+      # kubelet cannot verify runAsNonRoot against a non-numeric image user.
+      securityContext: { runAsNonRoot: true, runAsUser: 1001, seccompProfile: { type: RuntimeDefault } }
       initContainers:
         - name: migrate
           image: ghcr.io/OWNER/fastapi-realtime-chat-backend:latest
