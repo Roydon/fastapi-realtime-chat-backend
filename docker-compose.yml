@@ -1,0 +1,104 @@
+# Local demo stack: 2 API replicas behind nginx, Postgres, Redis, MinIO, Prometheus.
+# `make up` copies .env.example to .env and waits for health.
+
+x-api: &api
+  build:
+    context: .
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+asyncpg://chat:chat@postgres:5432/chat
+    REDIS_URL: redis://redis:6379/0
+    S3_ENDPOINT_URL: http://minio:9000
+    S3_PUBLIC_ENDPOINT_URL: http://localhost:8080
+  depends_on:
+    postgres: {condition: service_healthy}
+    redis: {condition: service_healthy}
+    minio: {condition: service_healthy}
+    migrate: {condition: service_completed_successfully}
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: chat
+      POSTGRES_DB: chat
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat -d chat"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    tmpfs: ["/var/lib/postgresql/data"]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-08T15-41-24Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin-local-only
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    tmpfs: ["/data"]
+
+  migrate:
+    <<: *api
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      minio: {condition: service_healthy}
+    entrypoint: ["sh", "-c", "alembic upgrade head && python -m app.bootstrap"]
+    restart: "no"
+
+  api1:
+    <<: *api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://chat:chat@postgres:5432/chat
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:8080
+      REPLICA_ID: api1
+
+  api2:
+    <<: *api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://chat:chat@postgres:5432/chat
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:8080
+      REPLICA_ID: api2
+
+  nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./demo:/usr/share/nginx/html/demo:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      api1: {condition: service_started}
+      api2: {condition: service_started}
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=2h"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    restart: unless-stopped

@@ -132,9 +132,7 @@ async def presign_attachment(
         allowed = ", ".join(settings.attachment_allowed_mime)
         raise AppError(415, "unsupported_media_type", f"Allowed types: {allowed}")
     if payload.size > settings.attachment_max_bytes:
-        raise AppError(
-            413, "payload_too_large", f"Limit is {settings.attachment_max_bytes} bytes"
-        )
+        raise AppError(413, "payload_too_large", f"Limit is {settings.attachment_max_bytes} bytes")
     key = f"u/{user}/{uuid7()}{_EXTENSIONS.get(content_type, '')}"
     post = storage.presign_upload(key, content_type)
     return PresignResponse(
@@ -149,9 +147,7 @@ async def presign_attachment(
 demo_router = APIRouter(prefix="/v1/demo", tags=["demo"])
 
 
-@demo_router.get(
-    "/token", response_model=TokenOut, summary="Demo only: token for alice or bob"
-)
+@demo_router.get("/token", response_model=TokenOut, summary="Demo only: token for alice or bob")
 async def demo_token(request: Request, user: Literal["alice", "bob"]) -> TokenOut:
     settings: Settings = request.app.state.settings
     ttl = 12 * 3600

@@ -38,9 +38,7 @@ def make_event(event_type: str, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _key(created_at: datetime, message_id: uuid.UUID) -> Tuple:
-    return tuple_(
-        literal(created_at, DateTime(timezone=True)), literal(message_id, Uuid())
-    )
+    return tuple_(literal(created_at, DateTime(timezone=True)), literal(message_id, Uuid()))
 
 
 _MESSAGE_KEY = tuple_(Message.created_at, Message.id)

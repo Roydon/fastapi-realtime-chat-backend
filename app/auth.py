@@ -75,9 +75,7 @@ def websocket_token(websocket: WebSocket) -> tuple[str | None, str | None]:
     Browsers cannot set headers on a WebSocket, so the token is accepted either as
     `?token=...` or as the second entry of `Sec-WebSocket-Protocol: bearer, <token>`.
     """
-    protocols = [
-        p.strip() for p in websocket.headers.get("sec-websocket-protocol", "").split(",")
-    ]
+    protocols = [p.strip() for p in websocket.headers.get("sec-websocket-protocol", "").split(",")]
     if len(protocols) >= 2 and protocols[0] == WS_SUBPROTOCOL and protocols[1]:
         return protocols[1], WS_SUBPROTOCOL
     return websocket.query_params.get("token"), None

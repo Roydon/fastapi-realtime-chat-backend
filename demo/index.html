@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Realtime Chat - Alice &amp; Bob</title>
+<style>
+  :root { color-scheme: light dark; --gap: 12px; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background: #0f172a; color: #e2e8f0; }
+  header { padding: 10px 16px; background: #1e293b; font-weight: 600; }
+  header small { font-weight: 400; opacity: .7; }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); padding: var(--gap);
+           max-width: 1100px; margin: 0 auto; }
+  .pane { display: flex; flex-direction: column; height: 78vh; background: #1e293b;
+          border: 1px solid #334155; border-radius: 10px; overflow: hidden; }
+  .pane h2 { margin: 0; padding: 10px 14px; background: #273449; font-size: 14px;
+             display: flex; justify-content: space-between; align-items: center; }
+  .pane h2 .status { font-weight: 400; font-size: 12px; opacity: .8; }
+  .log { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .msg { max-width: 78%; padding: 7px 10px; border-radius: 12px; background: #334155;
+         align-self: flex-start; white-space: pre-wrap; word-break: break-word; }
+  .msg.out { align-self: flex-end; background: #2563eb; color: #fff; }
+  .msg .meta { display: block; font-size: 11px; opacity: .75; margin-top: 3px; }
+  .msg img { display: block; margin-top: 6px; border-radius: 8px; max-height: 190px; }
+  .typing { font-size: 12px; opacity: .7; min-height: 16px; padding: 0 14px 6px; }
+  form { display: flex; gap: 6px; padding: 10px; border-top: 1px solid #334155; }
+  input[type=text] { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid #475569;
+                     background: #0f172a; color: inherit; }
+  button { padding: 8px 12px; border: 0; border-radius: 8px; background: #2563eb; color: #fff;
+           cursor: pointer; }
+  button.secondary { background: #475569; }
+  .receipt-sent::after    { content: " check"; }
+  .tick { font-size: 11px; }
+  .tick.read { color: #38bdf8; }
+</style>
+</head>
+<body>
+<header>
+  Realtime 1:1 chat demo &nbsp; <small>Alice is pinned to replica 1, Bob to replica 2 - messages
+  cross replicas via Redis. Tick meanings: &check; sent &nbsp; &check;&check; delivered &nbsp;
+  <span style="color:#38bdf8">&check;&check; read</span></small>
+</header>
+<div class="panes">
+  <section class="pane" data-user="alice" data-peer="bob" data-route="/r1"></section>
+  <section class="pane" data-user="bob" data-peer="alice" data-route="/r2"></section>
+</div>
+
+<template id="pane-tpl">
+  <h2><span class="who"></span><span class="status">connecting...</span></h2>
+  <div class="log"></div>
+  <div class="typing"></div>
+  <form>
+    <input type="text" class="text" placeholder="Message (emoji welcome)" autocomplete="off" />
+    <input type="file" class="file" accept="image/*,application/pdf" hidden />
+    <button type="button" class="secondary attach" title="Attach image or PDF">Attach</button>
+    <button type="submit">Send</button>
+  </form>
+</template>
+
+<script type="module">
+const ORIGIN = location.origin;
+const WS_ORIGIN = ORIGIN.replace(/^http/, "ws");
+
+class Pane {
+  constructor(el) {
+    this.user = el.dataset.user;
+    this.peer = el.dataset.peer;
+    this.route = el.dataset.route;
+    el.append(document.getElementById("pane-tpl").content.cloneNode(true));
+    this.el = el;
+    this.log = el.querySelector(".log");
+    this.statusEl = el.querySelector(".status");
+    this.typingEl = el.querySelector(".typing");
+    this.input = el.querySelector(".text");
+    this.fileInput = el.querySelector(".file");
+    el.querySelector(".who").textContent = this.user;
+    this.seen = new Set();
+    this.byClientId = new Map();
+    this.convId = null;
+    this.typingTimer = null;
+
+    el.querySelector("form").addEventListener("submit", (e) => { e.preventDefault(); this.send(); });
+    el.querySelector(".attach").addEventListener("click", () => this.fileInput.click());
+    this.fileInput.addEventListener("change", () => this.sendAttachment());
+    this.input.addEventListener("input", () => this.notifyTyping());
+    this.connect();
+  }
+
+  async connect() {
+    const r = await fetch(`${ORIGIN}/v1/demo/token?user=${this.user}`);
+    this.token = (await r.json()).access_token;
+    const ws = new WebSocket(`${WS_ORIGIN}${this.route}/v1/ws?token=${this.token}`);
+    this.ws = ws;
+    ws.onmessage = (ev) => this.onEvent(JSON.parse(ev.data));
+    ws.onclose = () => { this.statusEl.textContent = "disconnected - retrying"; setTimeout(() => this.connect(), 1500); };
+  }
+
+  api(path, opts = {}) {
+    return fetch(`${ORIGIN}${path}`, {
+      ...opts,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.token}`, ...(opts.headers || {}) },
+    });
+  }
+
+  onEvent(evt) {
+    const d = evt.data || {};
+    switch (evt.type) {
+      case "hello":
+        this.statusEl.textContent = `online - ${d.replica}`;
+        break;
+      case "message.new":
+        this.convId = d.conversation_id;
+        if (d.sender_id === this.user) { this.mark(d.client_msg_id, d, "sent"); break; }
+        this.render(d, false);
+        this.ws.send(JSON.stringify({ type: "ack", message_id: d.id }));
+        this.ws.send(JSON.stringify({ type: "read", conversation_id: d.conversation_id, up_to_message_id: d.id }));
+        break;
+      case "message.delivered":
+        this.mark(d.client_msg_id, null, "delivered");
+        break;
+      case "message.read":
+        for (const id of d.message_ids) this.markById(id, "read");
+        break;
+      case "typing":
+        this.typingEl.textContent = d.is_typing ? `${d.user_id} is typing...` : "";
+        clearTimeout(this._clearTyping);
+        this._clearTyping = setTimeout(() => (this.typingEl.textContent = ""), 3000);
+        break;
+      case "error":
+        console.warn(this.user, "ws error", d);
+        break;
+    }
+  }
+
+  render(d, outgoing) {
+    if (this.seen.has(d.id)) return;
+    this.seen.add(d.id);
+    const div = document.createElement("div");
+    div.className = "msg" + (outgoing ? " out" : "");
+    div.dataset.id = d.id;
+    div.textContent = d.body || "";
+    if (d.attachment_url) {
+      if ((d.attachment_mime || "").startsWith("image/")) {
+        const img = document.createElement("img");
+        img.src = d.attachment_url; div.append(img);
+      } else {
+        const a = document.createElement("a");
+        a.href = d.attachment_url; a.textContent = "Open attachment"; a.target = "_blank";
+        div.append(a);
+      }
+    }
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = new Date(d.created_at).toLocaleTimeString();
+    if (outgoing) { const t = document.createElement("span"); t.className = "tick"; meta.append(" ", t); }
+    div.append(meta);
+    this.log.append(div);
+    this.log.scrollTop = this.log.scrollHeight;
+    if (outgoing && d.client_msg_id) this.byClientId.set(d.client_msg_id, div);
+  }
+
+  mark(clientId, data, state) {
+    let div = clientId && this.byClientId.get(clientId);
+    if (!div && data) { this.render({ ...data, sender_id: this.user }, true); div = this.byClientId.get(clientId); }
+    if (div) this.setTick(div, state);
+  }
+  markById(id, state) {
+    const div = [...this.log.children].find((c) => c.dataset.id === id);
+    if (div) this.setTick(div, state);
+  }
+  setTick(div, state) {
+    const t = div.querySelector(".tick");
+    if (!t) return;
+    t.textContent = state === "sent" ? "✓" : "✓✓";
+    t.classList.toggle("read", state === "read");
+  }
+
+  async send() {
+    const body = this.input.value.trim();
+    if (!body) return;
+    this.input.value = "";
+    const clientId = crypto.randomUUID();
+    const resp = await this.api("/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({ recipient_id: this.peer, body, client_msg_id: clientId }),
+    });
+    const msg = await resp.json();
+    this.render({ ...msg, client_msg_id: clientId }, true);
+    this.setTick(this.byClientId.get(clientId), "sent");
+  }
+
+  async sendAttachment() {
+    const file = this.fileInput.files[0];
+    this.fileInput.value = "";
+    if (!file) return;
+    const presign = await (await this.api("/v1/attachments/presign", {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, content_type: file.type, size: file.size }),
+    })).json();
+    const form = new FormData();
+    for (const [k, v] of Object.entries(presign.fields)) form.append(k, v);
+    form.append("file", file);
+    const up = await fetch(presign.url, { method: "POST", body: form });
+    if (!up.ok) { alert("upload failed: " + up.status); return; }
+    const clientId = crypto.randomUUID();
+    const msg = await (await this.api("/v1/messages", {
+      method: "POST",
+      body: JSON.stringify({ recipient_id: this.peer, attachment_key: presign.key, client_msg_id: clientId }),
+    })).json();
+    this.render({ ...msg, client_msg_id: clientId }, true);
+    this.setTick(this.byClientId.get(clientId), "sent");
+  }
+
+  notifyTyping() {
+    if (!this.convId || !this.ws || this.ws.readyState !== 1) return;
+    this.ws.send(JSON.stringify({ type: "typing", conversation_id: this.convId, is_typing: true }));
+    clearTimeout(this.typingTimer);
+    this.typingTimer = setTimeout(() => {
+      this.ws.send(JSON.stringify({ type: "typing", conversation_id: this.convId, is_typing: false }));
+    }, 2000);
+  }
+}
+
+document.querySelectorAll(".pane").forEach((el) => new Pane(el));
+</script>
+</body>
+</html>

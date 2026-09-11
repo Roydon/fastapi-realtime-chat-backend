@@ -25,8 +25,8 @@ class SendMessageRequest(BaseModel):
         description="Client-generated id. Retrying with the same value never duplicates."
     )
     body: str | None = Field(default=None, description="UTF-8 text, up to 4000 characters")
-    attachment_key: Annotated[str, StringConstraints(min_length=1, max_length=512)] | None = (
-        Field(default=None, description="Key returned by POST /v1/attachments/presign")
+    attachment_key: Annotated[str, StringConstraints(min_length=1, max_length=512)] | None = Field(
+        default=None, description="Key returned by POST /v1/attachments/presign"
     )
 
     @model_validator(mode="after")

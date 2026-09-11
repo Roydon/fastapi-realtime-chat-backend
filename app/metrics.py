@@ -20,9 +20,7 @@ EVENTS_PUSHED = Counter("chat_ws_events_pushed_total", "Events written to WebSoc
 OUTBOX_BACKLOG = Gauge("chat_outbox_backlog", "Outbox rows not yet published to Redis")
 OUTBOX_PUBLISHED = Counter("chat_outbox_published_total", "Outbox rows published to Redis")
 OUTBOX_PUBLISH_ERRORS = Counter("chat_outbox_publish_errors_total", "Failed relay cycles")
-HTTP_REQUESTS = Counter(
-    "chat_http_requests_total", "HTTP requests", ["method", "route", "status"]
-)
+HTTP_REQUESTS = Counter("chat_http_requests_total", "HTTP requests", ["method", "route", "status"])
 HTTP_LATENCY = Histogram(
     "chat_http_request_duration_seconds",
     "HTTP request latency",

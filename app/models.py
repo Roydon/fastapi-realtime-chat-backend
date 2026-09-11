@@ -51,9 +51,7 @@ class Conversation(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
     user_a: Mapped[str] = mapped_column(String(USER_ID_LENGTH))
     user_b: Mapped[str] = mapped_column(String(USER_ID_LENGTH))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
         UniqueConstraint("user_a", "user_b", name="uq_conversations_pair"),
