@@ -41,7 +41,8 @@ def free_port() -> int:
 def backends() -> Iterator[dict[str, str]]:
     pg = PostgresContainer("postgres:16-alpine", driver="asyncpg")
     redis = RedisContainer("redis:7-alpine")
-    minio = MinioContainer("minio/minio:RELEASE.2025-04-08T15-41-24Z")
+    # quay.io, not Docker Hub: minio/minio on Docker Hub is no longer anonymously pullable.
+    minio = MinioContainer("quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z")
     pg.start()
     redis.start()
     minio.start()
