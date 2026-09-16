@@ -170,7 +170,7 @@ your fork.
 |---|---|---|
 | **Test suite** | 67 passed, 89% coverage on `app/` | Runs against real Postgres/Redis/MinIO via testcontainers |
 | **Cross-replica delivery** | ✓ sent → ✓✓ delivered → blue ✓✓ read | Live smoke test: message from pod A, received on pod B, via Redis fan-out |
-| **Deployment target** | AWS EKS `rt-chat-dev` namespace | Isolated (NetworkPolicy, ResourceQuota), cleaned up with `kubectl delete ns rt-chat-dev` |
+| **Deployment target** | AWS EKS, dedicated namespace | Isolated with NetworkPolicy + ResourceQuota; teardown is a single namespace delete |
 | **Local Docker Compose** | Up and healthy | `make up` works; demo at http://localhost:8080/demo/ (pending docker-compose install on this Mac) |
 
 For load-test capacity (p95 latency, sustained throughput), run `make loadtest` against the Compose stack
