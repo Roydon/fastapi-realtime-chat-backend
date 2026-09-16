@@ -15,3 +15,7 @@ build/
 .idea/
 .vscode/
 loadtest-results/
+
+# Local agent tooling (not part of the deliverable)
+.claude/
+.serena/
