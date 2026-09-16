@@ -171,10 +171,12 @@ your fork.
 | **Test suite** | 67 passed, 89% coverage on `app/` | Runs against real Postgres/Redis/MinIO via testcontainers |
 | **Cross-replica delivery** | ✓ sent → ✓✓ delivered → blue ✓✓ read | Live smoke test: message from pod A, received on pod B, via Redis fan-out |
 | **Deployment target** | AWS EKS, dedicated namespace | Isolated with NetworkPolicy + ResourceQuota; teardown is a single namespace delete |
-| **Local Docker Compose** | Up and healthy | `make up` works; demo at http://localhost:8080/demo/ (pending docker-compose install on this Mac) |
+| **Container images** | All pinned tags verified pullable | postgres, redis, minio, nginx, prometheus, k6 |
 
-For load-test capacity (p95 latency, sustained throughput), run `make loadtest` against the Compose stack
-on a machine with k6 installed, or deploy to a dedicated perf environment.
+Not yet measured here: `make up` end-to-end on a clean machine, and load-test capacity
+(p95 delivery latency, sustained throughput). The compose stack and `tools/loadtest.js` are
+wired up for both - run `make up` and `make loadtest` on a machine with Docker Compose and
+k6 installed, or deploy to a dedicated perf environment, and fill this section in.
 
 ## Limitations
 
