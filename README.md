@@ -10,7 +10,7 @@ Redis 7 · MinIO (S3-compatible) · `uv` · Docker.
 ## Quickstart
 
 ```bash
-git clone https://github.com/OWNER/fastapi-realtime-chat-backend.git
+git clone https://github.com/Roydon/fastapi-realtime-chat-backend.git
 cd fastapi-realtime-chat-backend
 make up
 ```

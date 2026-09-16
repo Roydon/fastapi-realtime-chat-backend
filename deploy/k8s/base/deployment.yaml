@@ -24,13 +24,16 @@ spec:
       # kubelet cannot verify runAsNonRoot against a non-numeric image user.
       securityContext: { runAsNonRoot: true, runAsUser: 1001, seccompProfile: { type: RuntimeDefault } }
       initContainers:
+        # Replace YOUR-REGISTRY with wherever you push this image (`docker build` from the
+        # repo root). CI here builds the image but does not publish it, so there is no
+        # ready-made public tag to point at.
         - name: migrate
-          image: ghcr.io/OWNER/fastapi-realtime-chat-backend:latest
+          image: YOUR-REGISTRY/fastapi-realtime-chat-backend:latest
           command: ["sh", "-c", "alembic upgrade head && python -m app.bootstrap"]
           envFrom: [{ configMapRef: { name: chat-api-config } }, { secretRef: { name: chat-api-secrets } }]
       containers:
         - name: api
-          image: ghcr.io/OWNER/fastapi-realtime-chat-backend:latest
+          image: YOUR-REGISTRY/fastapi-realtime-chat-backend:latest
           ports: [{ name: http, containerPort: 8000 }]
           envFrom: [{ configMapRef: { name: chat-api-config } }, { secretRef: { name: chat-api-secrets } }]
           env:
