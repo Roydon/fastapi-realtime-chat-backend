@@ -1,15 +1,22 @@
 // k6 WebSocket load test: ramps to a target concurrency, has each virtual user send a
-// message and wait for delivery, and reports p95 delivery latency.
+// message and wait for it to be delivered back over its own socket, and reports p95
+// delivery latency.
 //
 //   k6 run tools/loadtest.js
 //   k6 run -e BASE_URL=http://localhost:8080 -e TARGET_VUS=500 tools/loadtest.js
 //
-// Each VU authenticates as its own synthetic user (loadtest-<vu>-<iter>) and messages a
-// fixed peer (loadtest-peer), so p95 reflects real send -> persist -> outbox -> Redis ->
-// WebSocket round trips, not a warmed cache.
+// Each VU authenticates as its own synthetic user (loadtest-<vu>) and messages a fixed
+// peer, so p95 reflects real send -> persist -> outbox -> Redis -> WebSocket round trips,
+// not a warmed cache. Every VU/peer pair is its own conversation.
+//
+// Tokens are minted here with the shared HS256 secret rather than fetched from
+// /v1/demo/token: that endpoint only issues tokens for the two demo users, so it cannot
+// represent N distinct concurrent users. JWT_SECRET must match the server's.
 
 import ws from "k6/ws";
 import http from "k6/http";
+import crypto from "k6/crypto";
+import encoding from "k6/encoding";
 import { check } from "k6";
 import { Trend, Counter } from "k6/metrics";
 
@@ -17,10 +24,12 @@ const BASE_URL = __ENV.BASE_URL || "http://localhost:8080";
 const WS_URL = BASE_URL.replace(/^http/, "ws");
 const TARGET_VUS = Number(__ENV.TARGET_VUS || 500);
 const HOLD_DURATION = __ENV.HOLD_DURATION || "60s";
+const JWT_SECRET = __ENV.JWT_SECRET || "local-dev-only-secret-change-me-0123456789abcdef";
 
 const deliveryLatency = new Trend("chat_delivery_latency_ms", true);
 const messagesSent = new Counter("chat_messages_sent");
 const messagesDelivered = new Counter("chat_messages_delivered");
+const wsErrors = new Counter("chat_ws_errors");
 
 export const options = {
   scenarios: {
@@ -39,24 +48,33 @@ export const options = {
   thresholds: {
     chat_delivery_latency_ms: ["p(95)<1000"],
     ws_connecting: ["p(95)<1000"],
+    // A run where sends fail or sockets error is not a valid measurement, so fail loudly
+    // instead of reporting a latency computed from a handful of lucky iterations.
+    checks: ["rate>0.99"],
+    chat_ws_errors: ["count<10"],
   },
 };
 
-function token(user) {
-  const res = http.get(`${BASE_URL}/v1/demo/token?user=${user}`);
-  check(res, { "got demo token": (r) => r.status === 200 });
-  return res.json("access_token");
+function mintToken(sub) {
+  const header = encoding.b64encode(JSON.stringify({ alg: "HS256", typ: "JWT" }), "rawurl");
+  const now = Math.floor(Date.now() / 1000);
+  const claims = { sub: sub, iat: now, exp: now + 3600 };
+  const payload = encoding.b64encode(JSON.stringify(claims), "rawurl");
+  const signingInput = `${header}.${payload}`;
+  const signature = crypto.hmac("sha256", JWT_SECRET, signingInput, "base64rawurl");
+  return `${signingInput}.${signature}`;
 }
 
 export default function () {
   const self = `loadtest-${__VU}`;
   const peer = "loadtest-peer";
-  const myToken = token(self);
+  const myToken = mintToken(self);
 
   const url = `${WS_URL}/v1/ws?token=${myToken}`;
   ws.connect(url, {}, (socket) => {
     let sentAt = 0;
     let clientMsgId = "";
+    let closing = false;
 
     socket.on("open", () => {
       socket.setTimeout(() => {
@@ -70,10 +88,12 @@ export default function () {
         check(res, { "send accepted": (r) => r.status === 201 || r.status === 200 });
         messagesSent.add(1);
       }, 50);
-      // Every VU also plays "peer" for others' messages implicitly via message.new,
-      // but latency is only measured on our own sent message being fanned back to us
-      // as the sender (the API always pushes to sender + recipient).
-      socket.setTimeout(() => socket.close(), 5000);
+      // Latency is measured on our own sent message being fanned back to us as the
+      // sender (the API pushes to sender + recipient), so one socket covers the round trip.
+      socket.setTimeout(() => {
+        closing = true;
+        socket.close();
+      }, 5000);
     });
 
     socket.on("message", (data) => {
@@ -81,10 +101,21 @@ export default function () {
       if (event.type === "message.new" && event.data.client_msg_id === clientMsgId) {
         deliveryLatency.add(Date.now() - sentAt);
         messagesDelivered.add(1);
-        socket.send(JSON.stringify({ type: "ack", message_id: event.data.id }));
+        // Acking after the close timeout fired is a race in this script, not a server
+        // problem, so skip it rather than manufacture an error.
+        if (!closing) {
+          socket.send(JSON.stringify({ type: "ack", message_id: event.data.id }));
+        }
       }
     });
 
-    socket.on("error", () => {});
+    // Count errors rather than swallowing them: a silent handler here previously hid the
+    // fact that every socket was failing auth and the run measured nothing.
+    socket.on("error", (e) => {
+      const msg = e && e.error ? e.error() : String(e);
+      if (closing && msg.indexOf("close sent") !== -1) return;
+      wsErrors.add(1);
+      console.error(`ws error: ${msg}`);
+    });
   });
 }
